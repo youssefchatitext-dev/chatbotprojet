@@ -709,15 +709,19 @@ class LocalAgent(BaseAgent):
     def _parse_percentage(self, text: str, keywords: list[str]) -> float | None:
         normalized = text.lower()
         for keyword in keywords:
-            pattern = rf"{keyword}s?\s*(?:cible|target|objectif|>=|<=|=|:)?\s*(\d+(?:[.,]\d+)?)\s*%?"
-            match = re.search(pattern, normalized)
+            pattern_before = rf"(\d+(?:[.,]\d+)?)\s*%\s*(?:de\s*)?{keyword}s?"
+            match = re.search(pattern_before, normalized)
             if match:
                 return float(match.group(1).replace(",", "."))
 
-        for match in re.finditer(r"(\d+(?:[.,]\d+)?)\s*%", normalized):
-            number = float(match.group(1).replace(",", "."))
-            before = normalized[: match.start()]
-            if any(keyword in before[-20:] for keyword in keywords):
+            pattern = rf"{keyword}s?\s*(?:cible|target|objectif|>=|<=|=|:)?\s*(\d+(?:[.,]\d+)?)\s*%?"
+            for match in re.finditer(pattern, normalized):
+                number = float(match.group(1).replace(",", "."))
+                matched_text = normalized[match.start(): match.end()]
+                if "%" not in matched_text:
+                    after = normalized[match.end():]
+                    if re.match(r"^\s*(?:mad|dh|dhs|dirhams?)\b", after):
+                        continue
                 return number
 
         return None
