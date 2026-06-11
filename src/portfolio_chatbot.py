@@ -118,66 +118,70 @@ def _extract_parameters(user_input: str) -> tuple[float | None, float | None, fl
     return rendement, risque, capital
 
 def _format_allocations_markdown(allocations: pd.DataFrame, latest_prices: pd.Series | None = None, capital: float | None = None) -> str:
-    # Ensure DataFrame has clean indices to avoid "None of [index(...)] are in the [index]" errors
-    allocations = allocations.copy().reset_index(drop=True)
-    if allocations.empty:
-        return "Aucune allocation significative n'a été retenue."
-    if capital is None or capital <= 0 or latest_prices is None:
-        lines = ["| Entreprise | Ticker | Poids Cible |"]
-        lines.append("|---|---|---:|")
+    try:
+        # Ensure DataFrame has clean indices to avoid "None of [index(...)] are in the [index]" errors
+        allocations = allocations.copy().reset_index(drop=True)
+        if allocations.empty:
+            return "Aucune allocation significative n'a été retenue."
+        if capital is None or capital <= 0 or latest_prices is None:
+            lines = ["| Entreprise | Ticker | Poids Cible |"]
+            lines.append("|---|---|---:|")
+            for _, row in allocations.iterrows():
+                lines.append(f"| {row['Entreprise']} | {row['Ticker']} | {row['Poids (%)']:.2f}% |")
+            return "\n".join(lines)
+
+        prices_dict = latest_prices.to_dict() if isinstance(latest_prices, pd.Series) else dict(latest_prices)
+        items = []
         for _, row in allocations.iterrows():
-            lines.append(f"| {row['Entreprise']} | {row['Ticker']} | {row['Poids (%)']:.2f}% |")
-        return "\n".join(lines)
+            ticker = row['Ticker']
+            price = prices_dict.get(ticker, 0.0)
+            target_weight = float(row['Poids (%)'])
+            items.append({
+                'Entreprise': row['Entreprise'],
+                'Ticker': ticker,
+                'Prix': price,
+                'Cible (%)': target_weight,
+                'Shares': 0
+            })
 
-    prices_dict = latest_prices.to_dict() if isinstance(latest_prices, pd.Series) else dict(latest_prices)
-    items = []
-    for _, row in allocations.iterrows():
-        ticker = row['Ticker']
-        price = prices_dict.get(ticker, 0.0)
-        target_weight = float(row['Poids (%)'])
-        items.append({
-            'Entreprise': row['Entreprise'],
-            'Ticker': ticker,
-            'Prix': price,
-            'Cible (%)': target_weight,
-            'Shares': 0
-        })
-
-    cash_restant = capital
-    for item in items:
-        if item['Prix'] > 0:
-            target_amount = capital * item['Cible (%)'] / 100
-            shares = int(target_amount // item['Prix'])
-            item['Shares'] = shares
-            cash_restant -= shares * item['Prix']
-
-    items.sort(key=lambda x: x['Cible (%)'], reverse=True)
-    can_buy = True
-    while can_buy:
-        can_buy = False
+        cash_restant = capital
         for item in items:
-            if item['Prix'] > 0 and cash_restant >= item['Prix']:
-                item['Shares'] += 1
-                cash_restant -= item['Prix']
-                can_buy = True
+            if item['Prix'] > 0:
+                target_amount = capital * item['Cible (%)'] / 100
+                shares = int(target_amount // item['Prix'])
+                item['Shares'] = shares
+                cash_restant -= shares * item['Prix']
 
-    lines = ["| Entreprise | Ticker | Prix unitaire | Poids Réel | Quantité | Montant Investi |"]
-    lines.append("|---|---|---:|---:|---:|---:|")
-    
-    total_invested = capital - cash_restant
+        items.sort(key=lambda x: x['Cible (%)'], reverse=True)
+        can_buy = True
+        while can_buy:
+            can_buy = False
+            for item in items:
+                if item['Prix'] > 0 and cash_restant >= item['Prix']:
+                    item['Shares'] += 1
+                    cash_restant -= item['Prix']
+                    can_buy = True
 
-    for item in items:
-        if item['Shares'] > 0:
-            actual_amount = item['Shares'] * item['Prix']
-            actual_weight = (actual_amount / capital) * 100
-            lines.append(f"| {item['Entreprise']} | {item['Ticker']} | {item['Prix']:,.2f} MAD | {actual_weight:.2f}% | {item['Shares']} | **{actual_amount:,.2f} MAD** |")
+        lines = ["| Entreprise | Ticker | Prix unitaire | Poids Réel | Quantité | Montant Investi |"]
+        lines.append("|---|---|---:|---:|---:|---:|")
+        
+        total_invested = capital - cash_restant
 
-    lines.append(f"\n💡 **Bilan du portefeuille :**")
-    lines.append(f"- **Capital initial :** {capital:,.2f} MAD")
-    lines.append(f"- **Montant réellement investi :** {total_invested:,.2f} MAD")
-    lines.append(f"- **Liquidité restante (Cash) :** {cash_restant:,.2f} MAD")
-    
-    return "\n".join(lines)
+        for item in items:
+            if item['Shares'] > 0:
+                actual_amount = item['Shares'] * item['Prix']
+                actual_weight = (actual_amount / capital) * 100
+                lines.append(f"| {item['Entreprise']} | {item['Ticker']} | {item['Prix']:,.2f} MAD | {actual_weight:.2f}% | {item['Shares']} | **{actual_amount:,.2f} MAD** |")
+
+        lines.append(f"\n💡 **Bilan du portefeuille :**")
+        lines.append(f"- **Capital initial :** {capital:,.2f} MAD")
+        lines.append(f"- **Montant réellement investi :** {total_invested:,.2f} MAD")
+        lines.append(f"- **Liquidité restante (Cash) :** {cash_restant:,.2f} MAD")
+        
+        return "\n".join(lines)
+    except Exception as e:
+        import traceback
+        return f"Erreur lors du formatage des allocations : {str(e)}\n{traceback.format_exc()}"
 
 def _fetch_ai_response(prompt: str) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
@@ -258,13 +262,16 @@ def _simulate_random_portfolios(annual_returns: pd.Series, cov_matrix: pd.DataFr
     return results, weights_record
 
 def optimiser_portefeuille_personnalise(rendement_cible_pct: float, risque_max_pct: float, capital: float | None = None) -> str:
-    stock_glob = Path(os.getenv("CSE_STOCK_GLOB", str(DEFAULT_STOCK_GLOB)))
-    info_csv = Path(os.getenv("CSE_INFO_CSV", str(DEFAULT_INFO_CSV)))
-    company_labels = _load_company_labels(info_csv)
-    prices = _load_price_frame(stock_glob)
-    if prices.empty:
-        return "Erreur technique : aucun historique de prix exploitable n'a été trouvé dans tes fichiers."
-    latest_prices = prices.iloc[-1]
+    try:
+        stock_glob = Path(os.getenv("CSE_STOCK_GLOB", str(DEFAULT_STOCK_GLOB)))
+        info_csv = Path(os.getenv("CSE_INFO_CSV", str(DEFAULT_INFO_CSV)))
+        company_labels = _load_company_labels(info_csv)
+        prices = _load_price_frame(stock_glob)
+        if prices.empty:
+            return "Erreur technique : aucun historique de prix exploitable n'a été trouvé dans tes fichiers."
+        latest_prices = prices.iloc[-1]
+    except Exception as e:
+        return f"Erreur lors du chargement des données : {str(e)}"
     returns = prices.pct_change().dropna(how="all")
     annual_returns = returns.mean() * 252
     cov_matrix = returns.cov() * 252
@@ -281,30 +288,37 @@ def optimiser_portefeuille_personnalise(rendement_cible_pct: float, risque_max_p
         is_plan_b = True
     else:
         best_idx = int(valid_indices[np.argmax(results[2, valid_indices])])
-    optimal_weights = weights_record[best_idx]
-    allocations = pd.DataFrame({"Ticker": returns.columns, "Poids (%)": optimal_weights * 100})
-    allocations = allocations[allocations["Poids (%)"] > 1.0].reset_index(drop=True)
-    allocations = allocations.sort_values(by="Poids (%)", ascending=False).reset_index(drop=True)
-    # Ensure indices are fresh by copying and resetting again to prevent Streamlit caching issues
-    allocations = allocations.copy().reset_index(drop=True)
-    allocations["Entreprise"] = allocations["Ticker"].map(lambda ticker: company_labels.get(ticker, ticker))
-    table_markdown = _format_allocations_markdown(allocations, latest_prices=latest_prices, capital=capital)
-    if is_plan_b:
-        intro_text = (
-            f"⚠️ **Compromis nécessaire !**\n\n"
-            f"Il m'a été mathématiquement impossible d'atteindre tes {rendement_cible_pct:.2f}% de rendement sans dépasser ta limite de {risque_max_pct:.2f}% de risque.\n"
-            f"J'ai donc activé mon **Plan B** : Voici le portefeuille qui t'offre le rendement **le plus élevé possible** tout en restant strictement sous ta limite de risque.\n\n"
+    try:
+        optimal_weights = weights_record[best_idx]
+        allocations = pd.DataFrame({"Ticker": returns.columns, "Poids (%)": optimal_weights * 100})
+        allocations = allocations[allocations["Poids (%)"] > 1.0].reset_index(drop=True)
+        allocations = allocations.sort_values(by="Poids (%)", ascending=False).reset_index(drop=True)
+        # Ensure indices are fresh by copying and resetting again to prevent Streamlit caching issues
+        allocations = allocations.copy().reset_index(drop=True)
+        allocations["Entreprise"] = allocations["Ticker"].map(lambda ticker: company_labels.get(ticker, ticker))
+        table_markdown = _format_allocations_markdown(allocations, latest_prices=latest_prices, capital=capital)
+    except Exception as e:
+        import traceback
+        return f"Erreur lors de la création du portefeuille : {str(e)}\n{traceback.format_exc()}"
+        if is_plan_b:
+            intro_text = (
+                f"⚠️ **Compromis nécessaire !**\n\n"
+                f"Il m'a été mathématiquement impossible d'atteindre tes {rendement_cible_pct:.2f}% de rendement sans dépasser ta limite de {risque_max_pct:.2f}% de risque.\n"
+                f"J'ai donc activé mon **Plan B** : Voici le portefeuille qui t'offre le rendement **le plus élevé possible** tout en restant strictement sous ta limite de risque.\n\n"
+            )
+        else:
+            intro_text = "✅ **Simulation réussie ! J'ai trouvé un portefeuille qui respecte toutes tes contraintes.**\n\n"
+        return (
+            f"{intro_text}"
+            f"📈 **Projections de l'algorithme :**\n"
+            f"- Rendement annuel estimé : **{results[0, best_idx]:.2f}%**\n"
+            f"- Risque (Volatilité) maximal : **{results[1, best_idx]:.2f}%**\n\n"
+            f"🎯 **Voici la répartition recommandée :**\n\n"
+            f"{table_markdown}\n"
         )
-    else:
-        intro_text = "✅ **Simulation réussie ! J'ai trouvé un portefeuille qui respecte toutes tes contraintes.**\n\n"
-    return (
-        f"{intro_text}"
-        f"📈 **Projections de l'algorithme :**\n"
-        f"- Rendement annuel estimé : **{results[0, best_idx]:.2f}%**\n"
-        f"- Risque (Volatilité) maximal : **{results[1, best_idx]:.2f}%**\n\n"
-        f"🎯 **Voici la répartition recommandée :**\n\n"
-        f"{table_markdown}\n"
-    )
+    except Exception as e:
+        import traceback
+        return f"Erreur finale : {str(e)}\n{traceback.format_exc()}"
 
 def obtenir_plages_possibles() -> str:
     stock_glob = Path(os.getenv("CSE_STOCK_GLOB", str(DEFAULT_STOCK_GLOB)))
