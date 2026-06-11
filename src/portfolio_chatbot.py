@@ -118,6 +118,8 @@ def _extract_parameters(user_input: str) -> tuple[float | None, float | None, fl
     return rendement, risque, capital
 
 def _format_allocations_markdown(allocations: pd.DataFrame, latest_prices: pd.Series | None = None, capital: float | None = None) -> str:
+    # Ensure DataFrame has clean indices to avoid "None of [index(...)] are in the [index]" errors
+    allocations = allocations.copy().reset_index(drop=True)
     if allocations.empty:
         return "Aucune allocation significative n'a été retenue."
     if capital is None or capital <= 0 or latest_prices is None:
@@ -283,6 +285,8 @@ def optimiser_portefeuille_personnalise(rendement_cible_pct: float, risque_max_p
     allocations = pd.DataFrame({"Ticker": returns.columns, "Poids (%)": optimal_weights * 100})
     allocations = allocations[allocations["Poids (%)"] > 1.0].reset_index(drop=True)
     allocations = allocations.sort_values(by="Poids (%)", ascending=False).reset_index(drop=True)
+    # Ensure indices are fresh by copying and resetting again to prevent Streamlit caching issues
+    allocations = allocations.copy().reset_index(drop=True)
     allocations["Entreprise"] = allocations["Ticker"].map(lambda ticker: company_labels.get(ticker, ticker))
     table_markdown = _format_allocations_markdown(allocations, latest_prices=latest_prices, capital=capital)
     if is_plan_b:
