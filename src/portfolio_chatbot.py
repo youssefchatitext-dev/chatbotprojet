@@ -280,8 +280,8 @@ def optimiser_portefeuille_personnalise(rendement_cible_pct: float, risque_max_p
         best_idx = int(valid_indices[np.argmax(results[2, valid_indices])])
     optimal_weights = weights_record[best_idx]
     allocations = pd.DataFrame({"Ticker": returns.columns, "Poids (%)": optimal_weights * 100})
-    allocations = allocations[allocations["Poids (%)"] > 1.0]
-    allocations = allocations.sort_values(by="Poids (%)", ascending=False)
+    allocations = allocations[allocations["Poids (%)"] > 1.0].reset_index(drop=True)
+    allocations = allocations.sort_values(by="Poids (%)", ascending=False).reset_index(drop=True)
     allocations["Entreprise"] = allocations["Ticker"].map(lambda ticker: company_labels.get(ticker, ticker))
     table_markdown = _format_allocations_markdown(allocations, latest_prices=latest_prices, capital=capital)
     if is_plan_b:
