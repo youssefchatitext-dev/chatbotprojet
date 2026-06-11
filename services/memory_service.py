@@ -166,7 +166,9 @@ class MemoryService:
         profile = cls.get_profile()
         summary_parts = []
         if profile.get("risk_tolerance"):
-            summary_parts.append(f"Tolérance au risque: {profile['risk_tolerance']}")
+            risk_labels = {"low": "faible", "medium": "modéré", "high": "élevé"}
+            normalized_risk = str(profile["risk_tolerance"]).lower()
+            summary_parts.append(f"Tolérance au risque: {risk_labels.get(normalized_risk, profile['risk_tolerance'])}")
         if profile.get("investment_horizon"):
             summary_parts.append(f"Horizon: {profile['investment_horizon']} ans")
         if profile.get("preferred_sectors"):

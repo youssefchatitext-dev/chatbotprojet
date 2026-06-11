@@ -8,6 +8,7 @@ import time
 import re
 import unicodedata
 from typing import Any
+from scipy.stats import norm
 
 from core.explanation_engine import ExplanationEngine
 from core.intent_engine import IntentEngine, IntentResult
@@ -38,6 +39,9 @@ GREETING_ACTIONS = [
     "je peux construire une allocation optimale",
     "je peux comparer des stratégies",
     "je peux t'aider à choisir entre rendement et risque",
+    "je peux transformer une idée vague en contraintes de portefeuille",
+    "je peux détecter un profil prudent, équilibré ou agressif",
+    "je peux répondre même si ta demande contient quelques fautes",
 ]
 GREETING_ENDS = [
     "Dis-moi ce que tu veux faire.",
@@ -45,6 +49,8 @@ GREETING_ENDS = [
     "Je suis prêt pour ta prochaine demande.",
     "Je suis là pour t'accompagner dans ton investissement.",
     "Je peux aussi proposer des variantes prudentes ou agressives.",
+    "Donne-moi juste ton objectif, ton risque, ou ton horizon.",
+    "Même une phrase simple suffit pour commencer.",
 ]
 
 SMALLTALK_OPENERS = [
@@ -60,6 +66,8 @@ SMALLTALK_CONTINUES = [
     "Dis-moi ce que tu veux analyser.",
     "Prêt pour une nouvelle optimisation financière.",
     "Je peux t'expliquer des concepts financiers ou proposer un portefeuille adapté.",
+    "Je peux aussi reformuler ta demande si elle est imprécise.",
+    "On peut partir d'un capital, d'un rendement cible ou d'un profil de risque.",
 ]
 
 THANK_YOU_TEMPLATES = [
@@ -68,6 +76,9 @@ THANK_YOU_TEMPLATES = [
     "N'hésite pas à demander d'autres simulations.",
     "Je peux aussi comparer plusieurs stratégies si tu veux.",
     "Je peux générer d'autres profils de portefeuille si tu en as besoin.",
+    "Content que ce soit utile.",
+    "On peut affiner encore avec un horizon, un secteur ou un capital.",
+    "Je peux garder ce profil comme base pour une variante.",
 ]
 
 GOODBYE_TEMPLATES = [
@@ -76,6 +87,10 @@ GOODBYE_TEMPLATES = [
     "Bonne continuation.",
     "À plus tard pour une nouvelle optimisation.",
     "Je reste disponible si tu veux analyser un autre scénario.",
+    "À bientôt. Je garderai le contexte de cette session pour reprendre plus facilement.",
+    "Bonne journée. Reviens quand tu veux pour comparer un nouveau portefeuille.",
+    "À plus tard. Pense à préciser rendement, risque et capital pour une simulation directe.",
+    "Merci pour l'échange. Je serai prêt pour la prochaine analyse.",
 ]
 
 HELP_TEMPLATES = [
@@ -85,6 +100,9 @@ HELP_TEMPLATES = [
     "Je peux expliquer les notions financières importantes.",
     "Je peux générer des profils prudents, équilibrés ou agressifs.",
     "Je peux t'aider à choisir entre croissance et revenus ou à définir un horizon d'investissement.",
+    "Je comprends des demandes imparfaites comme 'portfeuille prudent 5 ans 50000 mad'.",
+    "Je peux détailler une option précédente si tu écris 'option 2'.",
+    "Je peux comparer les dernières propositions si tu écris 'compare option 1 et 3'.",
 ]
 
 EDUCATION_SUBJECTS = {
@@ -150,6 +168,9 @@ CLARIFICATION_TEMPLATES = [
     "Veux-tu privilégier certains secteurs ?",
     "As-tu un capital précis à investir ?",
     "Tu veux que je te propose un portefeuille défensif, équilibré ou offensif ?",
+    "Veux-tu plutôt maximiser le Sharpe, minimiser la volatilité ou diversifier au maximum ?",
+    "Donne-moi au moins un rendement cible et un risque maximal pour calculer une allocation.",
+    "Si tu n'as pas de chiffres, indique simplement prudent, équilibré ou agressif.",
 ]
 
 GREETING_RESPONSES = [
@@ -164,16 +185,22 @@ THANK_YOU_RESPONSES = [
     *THANK_YOU_TEMPLATES,
     "Je suis content que cela t'ait aidé.",
     "Tu peux encore demander une autre simulation si tu veux.",
+    "Avec plaisir. Je peux maintenant détailler le risque, la diversification ou une option précise.",
+    "Merci à toi. On peut continuer avec une variante plus prudente ou plus dynamique.",
 ]
 PERSONAL_RESPONSES = [
     "Je suis ton assistant local pour la Bourse de Casablanca, spécialisé dans l'analyse de portefeuille et l'éducation financière.",
     "Je fonctionne sans connexion externe et je m'appuie sur tes données locales pour t'aider.",
     "Je suis un assistant offline qui peut expliquer la démarche, les métriques et les choix d'allocation.",
+    "Je suis conçu pour comprendre tes objectifs d'investissement, détecter les contraintes utiles et proposer des allocations calculées localement.",
+    "Mon rôle est de transformer une demande en langage naturel en analyse rendement-risque exploitable.",
 ]
 GENERAL_RESPONSES = [
     "Je peux t'aider avec des questions générales sur l'investissement, le risque, le rendement et la diversification.",
     "Pose-moi une question sur la finance locale ou la construction de portefeuille.",
     "Je peux expliquer des concepts ou t'aider à choisir une stratégie adaptée.",
+    "Je peux répondre à des questions de finance, mais je reste centré sur les portefeuilles et l'investissement.",
+    "Si ta question touche au risque, au rendement ou aux actions, je peux la traiter.",
 ]
 INVESTMENT_GUIDANCE_RESPONSES = [
     "En investissement, diversifier permet d'éviter qu'une seule mauvaise performance n'entraîne tout le portefeuille.",
@@ -181,11 +208,16 @@ INVESTMENT_GUIDANCE_RESPONSES = [
     "Plus l'horizon est long, plus tu peux te permettre une stratégie légèrement plus agressive.",
     "Il est utile de connaître tes secteurs préférés et les secteurs que tu veux éviter.",
     "Un bon portefeuille respecte tes objectifs tout en restant cohérent avec ta tolérance au risque.",
+    "Un portefeuille réaliste commence par trois éléments : horizon, risque supportable et capital disponible.",
+    "Une cible de rendement trop élevée sans risque correspondant conduit souvent à des allocations instables.",
+    "La meilleure allocation n'est pas toujours celle qui maximise le rendement, mais celle que tu peux conserver dans les périodes difficiles.",
 ]
 CASUAL_RESPONSES = [
     "Ça va bien, merci — prêt à analyser quelque chose ?",
     "Je suis ici pour t'aider à construire un portefeuille ou répondre à tes questions.",
     "Prêt à explorer des scénarios financiers ou à simuler des allocations.",
+    "Ça va bien. Donne-moi une idée d'investissement et je la structure.",
+    "Je suis prêt. Même une demande approximative peut servir de point de départ.",
 ]
 CLARIFY_RESPONSES = [
     *CLARIFICATION_TEMPLATES,
@@ -201,10 +233,15 @@ GOODBYE_RESPONSES = [
     *GOODBYE_TEMPLATES,
     "Bonne journée et à bientôt pour un autre scénario.",
     "Reviens quand tu veux pour tester d'autres portefeuilles.",
+    "À bientôt. Je reste disponible pour une prochaine simulation.",
+    "Bonne continuation. Reviens avec un rendement cible ou un profil de risque quand tu veux.",
 ]
 EXAMPLE_RESPONSES = [
     "Exemple : '12% rendement, 18% risque' ou '15% rendement, 14% risque'",
     "Tu peux aussi demander : 'propose-moi un portefeuille prudent' ou 'cherche un rendement 10%'.",
+    "Exemple : 'portefeuille équilibré 5 ans 100000 MAD avec risque modéré'.",
+    "Exemple : 'compare option 1 et option 3' après une simulation.",
+    "Exemple : 'explique le Sharpe simplement' ou 'c'est quoi la diversification ?'.",
 ]
 EXPLAIN_RESPONSES = [
     "Je génère des portefeuilles, j'estime rendement et risque, puis je te présente le meilleur compromis.",
@@ -217,6 +254,16 @@ DATA_RESPONSES = [
 ALLOCATION_RESPONSES = [
     "Pour afficher une allocation, indique un rendement cible et un risque maximum.",
     "Je peux te proposer plusieurs allocations compatibles si tu fournis ton rendement et ton risque.",
+    "Je peux construire une allocation si tu me donnes au minimum un objectif de rendement et une limite de risque.",
+    "Si tu fournis un capital en MAD, je peux aussi estimer les quantités d'actions à acheter.",
+]
+
+OUT_OF_SCOPE_RESPONSES = [
+    "Je suis spécialisé dans l'investissement, les portefeuilles et la Bourse de Casablanca. Reformule ta question autour du risque, du rendement, d'une action ou d'une allocation et je pourrai t'aider.",
+    "Cette question semble hors de mon domaine. Je peux surtout aider sur les portefeuilles, la finance, les actions, le risque, le rendement et la diversification.",
+    "Je ne suis pas le bon assistant pour ce sujet. En revanche, je peux analyser un portefeuille, expliquer une notion financière ou proposer une allocation adaptée.",
+    "Je préfère rester sur mon terrain : finance, investissement et optimisation de portefeuille. Donne-moi un objectif financier et je le transforme en analyse.",
+    "Ta question ne ressemble pas à une demande financière. Essaie par exemple avec un capital, un horizon, un risque maximal ou une notion comme Sharpe, volatilité ou diversification.",
 ]
 
 MAX_RANDOM_PORTFOLIOS = 25000
@@ -238,6 +285,10 @@ class LocalAgent(BaseAgent):
         intent = self.intent_engine.analyze(user_input, context=context)
         self._update_profile_from_intent(intent, user_input)
         self._update_profile_from_input(user_input)
+
+        # afficher plus d'options après une proposition
+        if self._is_more_options_request(user_input):
+            return self._list_recent_options()
 
         # selection d'une option precedente: 'option 2' ou 'choix 1'
         opt_n = self._is_option_selection(user_input)
@@ -266,6 +317,8 @@ class LocalAgent(BaseAgent):
 
         if self._is_smalltalk_request(user_input, intent):
             response = AgentResponse(content=self._compose_smalltalk_response(user_input))
+        elif self._is_goodbye_request(user_input):
+            response = AgentResponse(content=self._compose_goodbye_response())
         elif self._is_thank_you_request(user_input):
             response = AgentResponse(content=self._compose_thank_you_response())
         elif self._is_pure_educational_request(user_input, intent):
@@ -316,6 +369,8 @@ class LocalAgent(BaseAgent):
                 response = AgentResponse(content=self._compose_personal_response())
             elif self._is_method_explanation_request(user_input):
                 response = AgentResponse(content=self._method_explanation_message())
+            elif self._is_out_of_scope_request(user_input, intent):
+                response = AgentResponse(content=self._compose_out_of_scope_response(user_input))
             elif self._is_investment_question(user_input) or self._is_educational_intent(intent):
                 response = AgentResponse(content=self._answer_investment_question(user_input))
             elif self._fuzzy_contains_any(user_input, ["aide", "help", "comment faire", "que faire", "instructions"]):
@@ -327,7 +382,9 @@ class LocalAgent(BaseAgent):
             elif self._fuzzy_contains_any(user_input, ["allocation", "poids", "positions", "allocations", "top"]):
                 response = AgentResponse(content=self._compose_allocation_response())
             elif self._is_goodbye_request(user_input):
-                response = AgentResponse(content=random.choice(GOODBYE_RESPONSES))
+                response = AgentResponse(content=self._compose_goodbye_response())
+            elif self._is_out_of_scope_request(user_input, intent):
+                response = AgentResponse(content=self._compose_out_of_scope_response(user_input))
             elif user_input.strip().endswith("?"):
                 response = AgentResponse(content=random.choice(CLARIFY_RESPONSES))
             else:
@@ -354,6 +411,15 @@ class LocalAgent(BaseAgent):
 
     def _compose_thank_you_response(self) -> str:
         return f"{self._profile_summary_line()}{random.choice(THANK_YOU_RESPONSES)}"
+
+    def _compose_goodbye_response(self) -> str:
+        return f"{self._profile_summary_line()}{random.choice(GOODBYE_RESPONSES)}"
+
+    def _compose_out_of_scope_response(self, user_input: str) -> str:
+        hint = ""
+        if len(self._normalize_text(user_input).split()) <= 4:
+            hint = " Si tu voulais parler finance, ajoute par exemple 'risque', 'rendement', 'portefeuille' ou 'action'."
+        return f"{random.choice(OUT_OF_SCOPE_RESPONSES)}{hint}"
 
     def _compose_personal_response(self) -> str:
         profile_line = self._profile_summary_line()
@@ -556,7 +622,13 @@ class LocalAgent(BaseAgent):
         ]
         if not any(term in normalized for term in variant_terms):
             return False
-        return bool(self.memory_service.get_portfolio_history())
+
+        profile = self.memory_service.get_profile()
+        has_profile_constraints = (
+            self._as_float(profile.get("target_return")) is not None
+            and self._as_float(profile.get("max_risk")) is not None
+        )
+        return bool(self.memory_service.get_portfolio_history()) or has_profile_constraints
 
     def _build_contextual_variant_response(self, user_input: str) -> AgentResponse:
         target_return, max_risk = self._last_portfolio_constraints()
@@ -704,7 +776,45 @@ class LocalAgent(BaseAgent):
         normalized = unicodedata.normalize("NFKD", normalized)
         normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
         normalized = re.sub(r"[^a-z0-9%\s]", " ", normalized)
-        return re.sub(r"\s+", " ", normalized).strip()
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        typo_aliases = {
+            "portfeuille": "portefeuille",
+            "portefuille": "portefeuille",
+            "portefeuillee": "portefeuille",
+            "portfoli": "portfolio",
+            "rendemet": "rendement",
+            "rendment": "rendement",
+            "rendemnt": "rendement",
+            "risqu": "risque",
+            "risquee": "risque",
+            "volatilitee": "volatilite",
+            "volatilit": "volatilite",
+            "volatilte": "volatilite",
+            "diversifiction": "diversification",
+            "diversifcation": "diversification",
+            "optmisation": "optimisation",
+            "optimisaton": "optimisation",
+            "optimzer": "optimiser",
+            "sharpr": "sharpe",
+            "sharp": "sharpe",
+            "sortnio": "sortino",
+            "drawdon": "drawdown",
+            "reequilibrage": "reequilibrage",
+            "rebalencage": "rebalancing",
+            "alocation": "allocation",
+            "allocaton": "allocation",
+            "repartion": "repartition",
+            "capitale": "capital",
+            "montan": "montant",
+            "bonjoure": "bonjour",
+            "salu": "salut",
+            "mercii": "merci",
+            "mercie": "merci",
+            "aurevoir": "au revoir",
+        }
+        for typo, replacement in typo_aliases.items():
+            normalized = re.sub(rf"\b{typo}\b", replacement, normalized)
+        return normalized
 
     def _parse_percentage(self, text: str, keywords: list[str]) -> float | None:
         normalized = text.lower()
@@ -972,6 +1082,8 @@ class LocalAgent(BaseAgent):
                 return True
             if difflib.SequenceMatcher(None, normalized, kw_norm).ratio() >= threshold:
                 return True
+            if " " in kw_norm:
+                continue
             for token in tokens:
                 if difflib.SequenceMatcher(None, token, kw_norm).ratio() >= threshold:
                     return True
@@ -982,13 +1094,105 @@ class LocalAgent(BaseAgent):
         return any(word in normalized for word in ["plage", "range", "valeurs", "valeur"])
 
     def _is_greeting_request(self, user_input: str) -> bool:
-        return self._fuzzy_contains_any(user_input, ["bonjour", "salut", "hello", "coucou", "salam"])
+        return self._fuzzy_contains_any(user_input, ["bonjour", "salut", "hello", "coucou", "salam", "bonsoir", "hey", "hy"])
 
     def _is_thank_you_request(self, user_input: str) -> bool:
-        return self._fuzzy_contains_any(user_input, ["merci", "thanks", "top", "super"])
+        return self._fuzzy_contains_any(user_input, ["merci", "thanks", "top", "super", "parfait", "excellent", "bravo"])
+
+    def _is_goodbye_request(self, user_input: str) -> bool:
+        return self._fuzzy_contains_any(
+            user_input,
+            ["au revoir", "a bientot", "bye", "goodbye", "ciao", "a plus", "a plus tard", "bonne journee", "bonne nuit", "fin", "quit"],
+            threshold=0.68,
+        )
 
     def _is_personal_request(self, user_input: str) -> bool:
         return self._fuzzy_contains_any(user_input, ["qui es tu", "ton nom", "tu es", "que fais", "peux tu", "explique", "comment"])
+
+    def _is_out_of_scope_request(self, user_input: str, intent: IntentResult) -> bool:
+        normalized = self._normalize_text(user_input)
+        if not normalized or len(normalized) <= 2:
+            return False
+        if self._has_finance_signal(normalized):
+            return False
+        if self._is_greeting_request(user_input) or self._is_thank_you_request(user_input) or self._is_goodbye_request(user_input):
+            return False
+        out_of_scope_terms = [
+            "meteo",
+            "weather",
+            "recette",
+            "cuisine",
+            "sport",
+            "football",
+            "musique",
+            "film",
+            "serie",
+            "voyage",
+            "hotel",
+            "restaurant",
+            "programmation",
+            "python",
+            "java",
+            "html",
+            "maladie",
+            "medicament",
+            "medecin",
+            "politique",
+            "histoire",
+            "traduire",
+            "traduction",
+            "poeme",
+            "blague",
+        ]
+        if self._fuzzy_contains_any(normalized, out_of_scope_terms, threshold=0.78):
+            return True
+        if intent.intent != "unknown" and intent.confidence >= 0.28:
+            return False
+        question_words = ["qui", "quoi", "ou", "quand", "comment", "pourquoi", "combien", "quel", "quelle"]
+        return normalized.endswith("?") or any(normalized.startswith(word + " ") for word in question_words)
+
+    def _has_finance_signal(self, normalized: str) -> bool:
+        finance_terms = [
+            "portefeuille",
+            "portfolio",
+            "allocation",
+            "investir",
+            "investissement",
+            "action",
+            "actions",
+            "bourse",
+            "casablanca",
+            "masi",
+            "rendement",
+            "return",
+            "risque",
+            "volatilite",
+            "sharpe",
+            "sortino",
+            "var",
+            "cvar",
+            "drawdown",
+            "covariance",
+            "correlation",
+            "diversification",
+            "capital",
+            "budget",
+            "mad",
+            "dh",
+            "dirham",
+            "secteur",
+            "banque",
+            "energie",
+            "dividende",
+            "croissance",
+            "reequilibrage",
+            "frontiere",
+            "optimisation",
+            "optimiser",
+            "minimum volatilite",
+            "risk parity",
+        ]
+        return self._fuzzy_contains_any(normalized, finance_terms, threshold=0.74)
 
     def _is_general_conversation_request(self, user_input: str) -> bool:
         if self._is_greeting_request(user_input) or self._is_thank_you_request(user_input) or self._is_personal_request(user_input):
@@ -1490,15 +1694,40 @@ class LocalAgent(BaseAgent):
             return "Aucune allocation significative n'a été retenue."
 
         profile_summary = self.memory_service.get_profile_summary()
+        estimated_loss_prob = self._approximate_loss_probability(
+            portfolio.metrics.expected_return, portfolio.metrics.volatility
+        )
+        var_95 = abs(portfolio.metrics.var_95) * 100
+        cvar_95 = abs(portfolio.metrics.cvar_95) * 100
         lines = [
             f"## {title}\n",
+            "_⚠️ Avertissement : ces résultats sont des estimations historiques. Ils ne garantissent pas les performances futures. La valeur du portefeuille peut fluctuer et une perte est possible._\n",
+            "_Ces chiffres sont calculés à partir des données locales disponibles et doivent rester une base de réflexion plutôt qu'une promesse._\n",
+            "\n",
             f"- Rendement estimé : **{portfolio.metrics.expected_return * 100:.2f}%**\n",
+            f"  - Cela représente le gain moyen annuel attendu si les tendances passées se répètent. Ce n'est pas une promesse de gain.\n",
             f"- Risque estimé : **{portfolio.metrics.volatility * 100:.2f}%**\n",
+            "  - C'est une mesure de la variation possible du portefeuille : plus le risque est élevé, plus les gains ou pertes peuvent être importants.\n",
             f"- Sharpe : **{portfolio.metrics.sharpe_ratio:.2f}**\n",
+            "  - Il montre si le rendement attendu est bon par rapport au risque pris. Un Sharpe plus élevé est généralement meilleur.\n",
+            f"- Sortino : **{portfolio.metrics.sortino_ratio:.2f}**\n",
+            "  - Semblable au Sharpe, mais il prend en compte surtout les pertes. C'est utile si tu veux limiter les baisses.\n",
+            f"- VaR 95% : **{var_95:.2f}%**\n",
+            "  - Dans les 5 % des pires cas historiques, c'est la perte maximale que l'on peut attendre.\n",
+            f"- CVaR 95% : **{cvar_95:.2f}%**\n",
+            "  - En cas de très mauvais scénario, c'est la perte moyenne des cas les plus extrêmes.\n",
+            f"- Drawdown historique maximum : **{portfolio.metrics.max_drawdown * 100:.2f}%**\n",
+            "  - C'est la plus grande baisse observée depuis un sommet jusqu'à un creux.\n",
+            f"- Probabilité approximative d'une année perdante : **{estimated_loss_prob * 100:.1f}%**\n",
+            "  - C'est une estimation de la chance que ce portefeuille perde de la valeur sur une année.\n",
             f"- Concentration HHI : **{portfolio.metrics.concentration_score:.3f}**\n",
+            "  - Mesure si le portefeuille est trop centré sur quelques actions. Plus c'est bas, plus la répartition est équilibrée.\n",
             f"- Nombre effectif d'actifs : **{portfolio.metrics.effective_number_of_assets:.2f}**\n",
+            "  - Indique combien d'actifs sont réellement influents dans le portefeuille.\n",
             f"- Ratio de diversification : **{portfolio.metrics.diversification_ratio:.2f}**\n",
+            "  - Montre si les actifs se complètent bien ou s'ils ont tendance à évoluer ensemble.\n",
             f"- Exposition aux corrélations : **{portfolio.metrics.correlation_exposure:.3f}**\n",
+            "  - Si les actifs sont fortement corrélés, le portefeuille peut chuter plus fort en cas de mauvaise nouvelle.\n",
         ]
         if profile_summary and profile_summary != "Aucun profil enregistré pour le moment.":
             lines.append(f"- Profil actuel : {profile_summary}\n")
@@ -1600,6 +1829,11 @@ class LocalAgent(BaseAgent):
         )
 
         return "\n".join(lines)
+
+    def _approximate_loss_probability(self, expected_return: float, volatility: float) -> float:
+        if volatility <= 0:
+            return 0.0 if expected_return >= 0 else 1.0
+        return float(norm.cdf(-expected_return / volatility))
 
     def _store_portfolio_history(self, portfolio: PortfolioResult) -> None:
         self.memory_service.append_portfolio(
@@ -1742,7 +1976,10 @@ class LocalAgent(BaseAgent):
                 })
                 next_rank += 1
 
-        response.content += "\n" + "".join(option_lines)
+        response.content += (
+            "\n\n⚠️ J'ai trouvé plusieurs portefeuilles compatibles avec tes critères, mais je te présente d'abord la meilleure option. "
+            "Si tu veux en voir une autre variante, demande par exemple : 'option 2', 'montre-moi une autre option' ou 'voir plus d'options'."
+        )
         return response
 
     def _build_named_portfolio_options(
@@ -1817,7 +2054,7 @@ class LocalAgent(BaseAgent):
             return []
         option_entries.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
         latest_ts = option_entries[0].get("timestamp")
-        recent = [e for e in option_entries if abs(e.get("timestamp", 0) - latest_ts) < 5]
+        recent = [e for e in option_entries if abs(e.get("timestamp", 0) - latest_ts) < 30]
         recent.sort(key=lambda x: x.get("option_rank"))
         return recent
 
@@ -1830,6 +2067,47 @@ class LocalAgent(BaseAgent):
                 md = e.get("markdown") or "Détails non disponibles pour cette option."
                 return AgentResponse(content=md)
         return AgentResponse(content=f"L'option {option_number} n'a pas été trouvée parmi les dernières propositions.")
+
+    def _is_more_options_request(self, user_input: str) -> bool:
+        return self._fuzzy_contains_any(
+            user_input,
+            [
+                "plus d'options",
+                "plus d options",
+                "voir plus d'options",
+                "voir plus d options",
+                "autres options",
+                "d'autres options",
+                "encore des options",
+                "autre option",
+                "options supplémentaires",
+            ],
+            threshold=0.67,
+        )
+
+    def _list_recent_options(self) -> AgentResponse:
+        recent = self._get_recent_option_entries()
+        if not recent:
+            return AgentResponse(content="Je n'ai pas d'option récente en mémoire. Génère d'abord un portefeuille pour que je puisse afficher les variantes possibles.")
+
+        lines = [
+            "## Options disponibles",
+            "Voici les options récentes que je peux détailler :",
+            "",
+        ]
+        for e in recent:
+            rank = int(e.get("option_rank", -1))
+            lines.append(
+                f"- Option {rank} : rendement {e.get('expected_return', 'N/A')}, risque {e.get('volatility', 'N/A')}, Sharpe {e.get('sharpe', 'N/A')}"
+            )
+        lines.extend(
+            [
+                "",
+                "Tape `option N` pour voir les détails complets d'une option.",
+                "Tu peux aussi comparer deux options en écrivant par exemple `compare option 1 et option 2`.",
+            ]
+        )
+        return AgentResponse(content="\n".join(lines))
 
     def _is_compare_request(self, user_input: str) -> bool:
         return self._fuzzy_contains_any(user_input, ["compare", "comparer", "comparez"], threshold=0.7)
