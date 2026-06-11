@@ -127,10 +127,11 @@ def _format_allocations_markdown(allocations: pd.DataFrame, latest_prices: pd.Se
             lines.append(f"| {row['Entreprise']} | {row['Ticker']} | {row['Poids (%)']:.2f}% |")
         return "\n".join(lines)
 
+    prices_dict = latest_prices.to_dict() if isinstance(latest_prices, pd.Series) else dict(latest_prices)
     items = []
     for _, row in allocations.iterrows():
         ticker = row['Ticker']
-        price = latest_prices.get(ticker, 0.0)
+        price = prices_dict.get(ticker, 0.0)
         target_weight = float(row['Poids (%)'])
         items.append({
             'Entreprise': row['Entreprise'],

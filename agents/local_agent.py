@@ -1757,12 +1757,13 @@ class LocalAgent(BaseAgent):
         asset_names = portfolio.asset_names or {}
         invested = 0.0
         remaining_cash = float(capital or 0.0)
+        prices_dict = latest_prices.to_dict() if isinstance(latest_prices, pd.Series) else dict(latest_prices)
 
         if capital is not None and capital > 0:
             items = []
             for ticker, weight in weights.items():
                 label = asset_names.get(ticker, ticker)
-                price = float(latest_prices.get(ticker, 0.0))
+                price = float(prices_dict.get(ticker, 0.0))
                 if price <= 0:
                     continue
                 target_amount = capital * weight
